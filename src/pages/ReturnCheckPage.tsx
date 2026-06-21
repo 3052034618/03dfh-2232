@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   RotateCcw,
   AlertTriangle,
@@ -16,19 +16,104 @@ import {
   ChevronUp,
   User,
   MessageSquare,
-  Flag
+  Flag,
+  RefreshCw
 } from 'lucide-react';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { StatusBadge } from '../components/StatusBadge';
 import { mockVehicles, mockReturnRecords } from '../data/mockData';
 import { formatDateTime, formatDuration, getSeverityColor, getSeverityLabel } from '../utils/format';
+import { loadReturnRecords, saveReturnRecords } from '../utils/storage';
 import type { ReturnRecord } from '../types';
+
+const now = new Date();
+
+const initialPendingRecords: ReturnRecord[] = [
+  {
+    id: 'rr-pending-001',
+    vehicleId: 'v001',
+    plateNumber: '沪A·88629',
+    returnTime: new Date(now.getTime() - 1000 * 60 * 30).toISOString(),
+    sealNumber: 'SL-2026-0621-003',
+    sealIntact: true,
+    doorAbnormalities: [
+      {
+        id: 'ab-p01',
+        openTime: new Date(now.getTime() - 1000 * 60 * 180).toISOString(),
+        closeTime: new Date(now.getTime() - 1000 * 60 * 175).toISOString(),
+        duration: 300,
+        location: 'G60高速服务区',
+        temperatureChange: 1.8,
+        severity: 'medium'
+      }
+    ],
+    driverExplanation: '',
+    needRepair: false,
+    needReview: false,
+    needQualityControl: false,
+    handlerName: '',
+    remarks: ''
+  },
+  {
+    id: 'rr-pending-002',
+    vehicleId: 'v006',
+    plateNumber: '沪F·88192',
+    returnTime: new Date(now.getTime() - 1000 * 60 * 15).toISOString(),
+    sealNumber: 'SL-2026-0621-005',
+    sealIntact: false,
+    doorAbnormalities: [
+      {
+        id: 'ab-p02',
+        openTime: new Date(now.getTime() - 1000 * 60 * 90).toISOString(),
+        closeTime: new Date(now.getTime() - 1000 * 60 * 85).toISOString(),
+        duration: 300,
+        location: '途中',
+        temperatureChange: 3.2,
+        severity: 'high'
+      },
+      {
+        id: 'ab-p03',
+        openTime: new Date(now.getTime() - 1000 * 60 * 60).toISOString(),
+        closeTime: new Date(now.getTime() - 1000 * 60 * 58).toISOString(),
+        duration: 120,
+        location: '目的地配送点',
+        temperatureChange: 1.0,
+        severity: 'low'
+      }
+    ],
+    driverExplanation: '',
+    needRepair: false,
+    needReview: false,
+    needQualityControl: false,
+    handlerName: '',
+    remarks: ''
+  },
+  {
+    id: 'rr-pending-003',
+    vehicleId: 'v005',
+    plateNumber: '沪E·50917',
+    returnTime: new Date(now.getTime() - 1000 * 60 * 5).toISOString(),
+    sealNumber: 'SL-2026-0621-002',
+    sealIntact: true,
+    doorAbnormalities: [],
+    driverExplanation: '',
+    needRepair: false,
+    needReview: false,
+    needQualityControl: false,
+    handlerName: '',
+    remarks: ''
+  }
+];
 
 export const ReturnCheckPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'pending' | 'history'>('pending');
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
-  const [returnRecords, setReturnRecords] = useState<ReturnRecord[]>(mockReturnRecords);
+  const [returnRecords, setReturnRecords] = useState<ReturnRecord[]>(() => {
+    const saved = loadReturnRecords([]);
+    if (saved.length > 0) return saved;
+    return [...initialPendingRecords, ...mockReturnRecords];
+  });
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedAbnormalities, setExpandedAbnormalities] = useState<Set<string>>(new Set());
 
@@ -42,7 +127,7 @@ export const ReturnCheckPage: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
 
   const pendingRecords = returnRecords.filter(r => !r.handlerName);
-  const historyRecords = returnRecords.filter(r => r.handlerName);
+  const historyRecords = returnRecords.filter(r => !!r.handlerName);
 
   const selectedRecord = returnRecords.find(r => r.id === selectedRecordId) || null;
   const selectedVehicle = mockVehicles.find(v => v.id === selectedRecord?.vehicleId) || null;
@@ -51,6 +136,10 @@ export const ReturnCheckPage: React.FC = () => {
     r.plateNumber.includes(searchTerm) ||
     r.sealNumber.includes(searchTerm)
   );
+
+  useEffect(() => {
+    saveReturnRecords(returnRecords);
+  }, [returnRecords]);
 
   const toggleAbnormality = (id: string) => {
     setExpandedAbnormalities(prev => {
@@ -68,12 +157,12 @@ export const ReturnCheckPage: React.FC = () => {
     setSelectedRecordId(recordId);
     const record = returnRecords.find(r => r.id === recordId);
     if (record) {
-      setDriverExplanation(record.driverExplanation);
+      setDriverExplanation(record.driverExplanation || '');
       setNeedRepair(record.needRepair);
       setNeedReview(record.needReview);
       setNeedQualityControl(record.needQualityControl);
-      setRemarks(record.remarks);
-      setHandlerName(record.handlerName);
+      setRemarks(record.remarks || '');
+      setHandlerName(record.handlerName || '');
       setSealIntact(record.sealIntact);
     }
   };
@@ -99,11 +188,17 @@ export const ReturnCheckPage: React.FC = () => {
           : r
       ));
       setSubmitting(false);
+      setSelectedRecordId(null);
+      setDriverExplanation('');
+      setNeedRepair(false);
+      setNeedReview(false);
+      setNeedQualityControl(false);
+      setRemarks('');
+      setHandlerName('');
+      setSealIntact(true);
       setActiveTab('history');
     }, 1500);
   };
-
-  const pendingVehiclesCount = 3;
 
   return (
     <div className="return-page">
@@ -114,7 +209,7 @@ export const ReturnCheckPage: React.FC = () => {
         >
           <AlertTriangle size={16} />
           待核对
-          <span className="tab-badge warning">{pendingRecords.length + pendingVehiclesCount}</span>
+          <span className="tab-badge warning">{pendingRecords.length}</span>
         </button>
         <button
           className={`tab-button ${activeTab === 'history' ? 'active' : ''}`}
@@ -239,8 +334,8 @@ export const ReturnCheckPage: React.FC = () => {
                   </div>
                   <div className="seal-check-item">
                     <span className="seal-check-label">封签状态</span>
-                    <span className={`seal-check-value ${selectedRecord.sealIntact ? 'text-green' : 'text-red'}`}>
-                      {selectedRecord.sealIntact ? (
+                    <span className={`seal-check-value ${sealIntact ? 'text-green' : 'text-red'}`}>
+                      {sealIntact ? (
                         <><CheckCircle size={16} /> 完整</>
                       ) : (
                         <><XCircle size={16} /> 破损</>
@@ -253,7 +348,7 @@ export const ReturnCheckPage: React.FC = () => {
                   </div>
                 </div>
 
-                {activeTab === 'pending' && (
+                {!selectedRecord.handlerName && (
                   <div className="seal-check-action">
                     <div className="checkbox-wrapper">
                       <input
@@ -367,7 +462,7 @@ export const ReturnCheckPage: React.FC = () => {
                 </div>
               </Card>
 
-              {activeTab === 'pending' ? (
+              {!selectedRecord.handlerName ? (
                 <>
                   <Card title="司机说明" className="mt-4">
                     <div className="form-group">
@@ -472,7 +567,7 @@ export const ReturnCheckPage: React.FC = () => {
                       size="lg"
                       onClick={handleSubmit}
                       disabled={submitting}
-                      icon={submitting ? <span className="spin">⏳</span> : <CheckCircle size={18} />}
+                      icon={submitting ? <RefreshCw size={18} className="spin" /> : <CheckCircle size={18} />}
                     >
                       {submitting ? '提交中...' : '确认核对完成'}
                     </Button>
